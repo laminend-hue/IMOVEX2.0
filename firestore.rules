@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function incoming() { return request.resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email_verified == true && request.auth.token.email == 'lmsite.creator@gmail.com') ||
+        (request.auth.token.email_verified == true && request.auth.token.email == 'laminend2462@gmail.com')
+      );
+    }
+    function isApprovedAgency(agencyId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/agencies/$(agencyId)) &&
+        get(/databases/$(database)/documents/agencies/$(agencyId)).data.status == 'approved';
+    }
+
+    // Internal connectivity probes are not a public data surface.
+    match /test/{docId} {
+      allow read, write: if false;
+    }
+
+    // Quartiers de Dakar (Catalogue public)
+    match /neighborhoods/{neighborhoodId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Agences immobilières partenaires
+    match /agencies/{agencyId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == agencyId);
+      allow create: if isSignedIn() && request.auth.uid == agencyId &&
+        incoming().name is string && incoming().name.size() >= 2 && incoming().name.size() <= 120 &&
+        incoming().contactEmail is string && incoming().contactEmail == request.auth.token.email && incoming().contactEmail.size() <= 254 &&
+        incoming().phone is string && incoming().phone.size() <= 32 &&
+        incoming().status == 'pending' && incoming().isAdmin == false;
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == agencyId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'contactEmail', 'updatedAt']));
+      allow delete: if isAdmin();
+    }
+
+    // Propriétés & Biens immobiliers Dakar
+    match /properties/{propertyId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.agencyId == request.auth.uid) ||
+        resource.data.status in ['disponible', 'reserve'];
+      allow create: if isAdmin() || (isApprovedAgency(request.auth.uid) && incoming().agencyId == request.auth.uid &&
+        incoming().title is string && incoming().title.size() >= 5 && incoming().title.size() <= 160 &&
+        incoming().monthlyRent is number && incoming().monthlyRent > 0 && incoming().monthlyRent <= 100000000);
+      allow update: if isAdmin() || (isApprovedAgency(request.auth.uid) && resource.data.agencyId == request.auth.uid &&
+        request.resource.data.agencyId == request.auth.uid);
+      allow delete: if isAdmin() || (isApprovedAgency(request.auth.uid) && resource.data.agencyId == request.auth.uid);
+    }
+
+    // Demandes de visite locataires — Protection des données privées (Loi CDP Sénégal n° 2008-12)
+    match /visit_requests/{requestId} {
+      // Requests contain personal data. Only authenticated admins can read them.
+      allow read: if isAdmin();
+      // Création strictement validée : empêche l'injection de données arbitraires et le spam
+      allow create: if incoming().keys().hasOnly([
+                       'id', 'listingId', 'listingTitle', 'listingNeighborhood', 'listingRent', 'agencyId', 'agencyName',
+                       'fullName', 'phone', 'email', 'message', 'desiredVisitDate', 'consentCdp', 'status',
+                       'emailStatus', 'createdAt', 'updatedAt'
+                     ]) && incoming().id == requestId &&
+                       exists(/databases/$(database)/documents/properties/$(incoming().listingId)) &&
+                       get(/databases/$(database)/documents/properties/$(incoming().listingId)).data.status in ['disponible', 'reserve'] &&
+                       incoming().listingTitle == get(/databases/$(database)/documents/properties/$(incoming().listingId)).data.title &&
+                       incoming().listingNeighborhood == get(/databases/$(database)/documents/properties/$(incoming().listingId)).data.neighborhoodName &&
+                       incoming().listingRent == get(/databases/$(database)/documents/properties/$(incoming().listingId)).data.monthlyRent &&
+                       incoming().agencyId == get(/databases/$(database)/documents/properties/$(incoming().listingId)).data.agencyId &&
+                       incoming().fullName is string && 
+                       incoming().fullName.size() >= 2 && 
+                       incoming().fullName.size() <= 120 &&
+                       incoming().phone is string && 
+                       incoming().phone.size() >= 9 && 
+                       incoming().listingId is string && 
+                       incoming().phone.size() <= 32 &&
+                       incoming().listingId is string && incoming().listingId.size() <= 128 &&
+                       incoming().agencyName is string && incoming().agencyName.size() <= 120 &&
+                       incoming().listingTitle is string && incoming().listingTitle.size() <= 160 &&
+                       incoming().listingNeighborhood is string && incoming().listingNeighborhood.size() <= 120 &&
+                       incoming().listingRent is number && incoming().listingRent > 0 &&
+                       (!('email' in incoming()) || (incoming().email is string && incoming().email.size() <= 254)) &&
+                       (!('desiredVisitDate' in incoming()) || (incoming().desiredVisitDate is string && incoming().desiredVisitDate.size() <= 40)) &&
+                       incoming().status == 'nouvelle' && incoming().emailStatus == 'en_attente' &&
+                       incoming().consentCdp == true &&
+                       incoming().message is string && incoming().message.size() <= 2000;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Administrateurs
+    match /admins/{adminId} {
+      allow read: if isAdmin() && request.auth.uid == adminId;
+      allow write: if isAdmin();
+    }
+
+    // Default deny pour toute autre collection non déclarée
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

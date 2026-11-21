@@ -1,0 +1,49 @@
+# fly.toml — Configuration Fly.io pour IMOVEX
+# Déployer avec : fly deploy
+# Première fois : fly launch --no-deploy  puis  fly deploy
+
+app = "imovex"
+primary_region = "cdg"  # Paris — le plus proche du Sénégal disponible sur Fly.io
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1  # Toujours au moins 1 machine active (évite le cold start)
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 500
+    soft_limit = 400
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# Volume persistant pour les uploads locaux (si Firebase Storage n'est pas configuré)
+# Décommentez et créez le volume avec : fly volumes create imovex_uploads --size 5
+# [[mounts]]
+#   source = "imovex_uploads"
+#   destination = "/app/public/uploads"
+
+[[statics]]
+  guest_path = "/app/dist"
+  url_prefix = "/assets"
+
+[checks]
+  [checks.alive]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/system/health"
+    port = 3000
+    timeout = "5s"
+    type = "http"

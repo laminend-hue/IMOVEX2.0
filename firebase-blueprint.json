@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "Neighborhood": {
+      "title": "Neighborhood",
+      "description": "Quartiers de Dakar et du Sénégal pour filtrage des annonces",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "slug": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 100 },
+        "isPopular": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "displayOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "slug", "city", "isActive"]
+    },
+    "Agency": {
+      "title": "Agency",
+      "description": "Agence immobilière partenaire à Dakar",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string", "maxLength": 120 },
+        "contactEmail": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "address": { "type": "string", "maxLength": 200 },
+        "ninea": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "suspended"] },
+        "role": { "type": "string", "enum": ["agency", "admin"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "contactEmail", "phone", "status"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Bien immobilier en location à Dakar",
+      "type": "object",
+      "properties": {
+        "agencyId": { "type": "string", "maxLength": 128 },
+        "agencyName": { "type": "string", "maxLength": 120 },
+        "neighborhoodId": { "type": "string", "maxLength": 128 },
+        "neighborhoodName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "slug": { "type": "string", "maxLength": 200 },
+        "propertyType": { "type": "string", "enum": ["appartement", "maison", "studio", "chambre", "villa"] },
+        "city": { "type": "string", "maxLength": 100 },
+        "monthlyRent": { "type": "number" },
+        "depositAdvance": { "type": "number" },
+        "chargesIncluded": { "type": "boolean" },
+        "bedrooms": { "type": "number" },
+        "bathrooms": { "type": "number" },
+        "surfaceArea": { "type": "number" },
+        "isFurnished": { "type": "boolean" },
+        "description": { "type": "string", "maxLength": 4000 },
+        "features": { "type": "array" },
+        "status": { "type": "string", "enum": ["disponible", "reserve", "loue", "masque"] },
+        "photos": { "type": "array" },
+        "viewsCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["agencyId", "title", "monthlyRent", "propertyType", "status"]
+    },
+    "VisitRequest": {
+      "title": "VisitRequest",
+      "description": "Demande de visite locataire centralisée pour modération",
+      "type": "object",
+      "properties": {
+        "listingId": { "type": "string", "maxLength": 128 },
+        "listingTitle": { "type": "string", "maxLength": 200 },
+        "listingNeighborhood": { "type": "string", "maxLength": 100 },
+        "listingRent": { "type": "number" },
+        "agencyId": { "type": "string", "maxLength": 128 },
+        "agencyName": { "type": "string", "maxLength": 120 },
+        "fullName": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 120 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "desiredVisitDate": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["nouvelle", "transmise", "visite_planifiee", "conclue", "sans_suite"] },
+        "emailStatus": { "type": "string", "enum": ["en_attente", "envoye", "email_en_echec"] },
+        "emailErrorMessage": { "type": "string", "maxLength": 500 },
+        "emailSentAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["listingId", "fullName", "phone", "status"]
+    }
+  },
+  "firestore": {
+    "/neighborhoods/{neighborhoodId}": {
+      "schema": { "$ref": "#/entities/Neighborhood" },
+      "description": "Quartiers officiels de Dakar et zones de recherche"
+    },
+    "/agencies/{agencyId}": {
+      "schema": { "$ref": "#/entities/Agency" },
+      "description": "Profils des agences immobilières partenaires"
+    },
+    "/properties/{propertyId}": {
+      "schema": { "$ref": "#/entities/Property" },
+      "description": "Catalogue public des biens immobiliers vérifiés"
+    },
+    "/visit_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/VisitRequest" },
+      "description": "Demandes de visite soumises par les locataires"
+    }
+  }
+}

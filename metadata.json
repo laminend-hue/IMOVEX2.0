@@ -1,0 +1,6 @@
+{
+  "name": "imovex - Location Immobilière Dakar & Sénégal",
+  "description": "Plateforme de location immobilière au Sénégal (Dakar). Trouvez appartements, villas et studios à louer auprès d'agences partenaires vérifiées.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
