@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const IMOVE_LOGO_SRC = '/assets/brand/logo.svg';
+export const IMOVE_LOGO_SRC = '/assets/brand/logo.jpg';
 
 interface ImovexLogoProps {
   className?: string;
