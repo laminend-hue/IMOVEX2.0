@@ -1,4 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { AppProvider, useApp } from './lib/store/appStore.tsx';
 import { ThemeLanguageProvider } from './lib/i18n/ThemeLanguageContext.tsx';
 import { Header } from './components/layout/Header.tsx';
@@ -260,6 +261,7 @@ export default function App() {
     <ThemeLanguageProvider>
       <AppProvider>
         <MainApp />
+        <Analytics />
       </AppProvider>
     </ThemeLanguageProvider>
   );
