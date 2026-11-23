@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   PlusCircle, Edit, Trash2, Clock, CheckCircle, AlertTriangle, 
-  Eye, RefreshCw, Building2, ShieldAlert, Check, ShieldCheck, Link2,
+  Eye, EyeOff, RefreshCw, Building2, ShieldAlert, Check, ShieldCheck, Link2,
   Lock, LogOut, AlertCircle
 } from 'lucide-react';
 import { Listing, ListingStatus } from '../../types/database.ts';
@@ -33,12 +33,14 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [isVerifyingPasskey, setIsVerifyingPasskey] = useState(false);
 
   // Registration form state
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [regPhone, setRegPhone] = useState('+221 ');
   const [regAddress, setRegAddress] = useState('');
@@ -93,7 +95,9 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
         ninea: regNinea.trim(),
       });
       setRegisterModalOpen(false);
-      setConfirmationNotice('Votre demande d\'adhésion a été enregistrée avec succès ! Elle sera active dès validation par l’administrateur IMOVEX.');
+      // Connexion immédiate automatique après création de compte
+      await loginAgency(regEmail.trim(), regPassword);
+      setConfirmationNotice('🎉 Compte agence créé avec succès ! Vous êtes maintenant connecté à votre espace.');
     } catch (error: any) {
       setRegistrationError(error?.message || 'Erreur lors de l\'enregistrement de votre agence.');
     }
@@ -134,17 +138,29 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
                   className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </label>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Mot de passe
-                <input
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </label>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Mot de passe
+                </label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? "text" : "password"}
+                    required
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+                    title={showLoginPassword ? "Masquer" : "Afficher"}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
               <button
                 type="submit"
                 disabled={isVerifyingPasskey}
@@ -220,11 +236,31 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
                   <span className="text-[10px] text-slate-400">Strictement confidentiel, jamais affiché aux locataires.</span>
                 </div>
 
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Mot de passe du compte *
-                  <input type="password" required minLength={12} autoComplete="new-password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-                  <span className="mt-1 block text-[10px] font-normal text-slate-400">12 caractères minimum.</span>
-                </label>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Mot de passe du compte *
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type={showRegPassword ? "text" : "password"} 
+                      required 
+                      minLength={6} 
+                      autoComplete="new-password" 
+                      value={regPassword} 
+                      onChange={(e) => setRegPassword(e.target.value)} 
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPassword(!showRegPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+                      title={showRegPassword ? "Masquer" : "Afficher"}
+                    >
+                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <span className="mt-1 block text-[10px] font-normal text-slate-400">6 caractères minimum.</span>
+                </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Téléphone de l'agence *</label>
