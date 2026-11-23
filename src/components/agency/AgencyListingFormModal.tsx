@@ -177,7 +177,7 @@ export const AgencyListingFormModal: React.FC<AgencyListingFormModalProps> = ({
           isFurnished,
           description: description.trim(),
           features,
-          status: 'disponible',
+          status: 'en_attente',
           photos,
         });
       }
