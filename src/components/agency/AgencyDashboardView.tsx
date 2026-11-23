@@ -65,17 +65,20 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
     setPasskeyError(null);
     setIsVerifyingPasskey(true);
     try {
-      const success = await loginAgency(loginEmail, loginPassword);
-      if (!success) {
+      const res = await loginAgency(loginEmail, loginPassword) as any;
+      if (res && typeof res === 'object') {
+        if (!res.success) {
+          setPasskeyError(res.error || 'Adresse, mot de passe incorrects ou compte agence introuvable.');
+        }
+      } else if (!res) {
         setPasskeyError('Adresse, mot de passe incorrects ou compte agence introuvable.');
       }
-    } catch {
-      setPasskeyError('Connexion impossible. Vérifiez Firebase Auth et réessayez.');
+    } catch (err: any) {
+      setPasskeyError(err?.message || 'Connexion impossible. Réessayez.');
     } finally {
       setIsVerifyingPasskey(false);
     }
   };
-
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,14 +93,9 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
         ninea: regNinea.trim(),
       });
       setRegisterModalOpen(false);
-      setConfirmationNotice('Votre compte est créé. Il sera actif après validation par l’administrateur.');
+      setConfirmationNotice('Votre demande d\'adhésion a été enregistrée avec succès ! Elle sera active dès validation par l’administrateur IMOVEX.');
     } catch (error: any) {
-      const code = error?.code as string | undefined;
-      setRegistrationError(code === 'auth/email-already-in-use'
-        ? 'Cette adresse email possède déjà un compte. Connectez-vous avec votre mot de passe.'
-        : code === 'auth/weak-password'
-          ? 'Choisissez un mot de passe plus long (12 caractères minimum).'
-          : 'Création impossible. Vérifiez les champs et la configuration Firebase.');
+      setRegistrationError(error?.message || 'Erreur lors de l\'enregistrement de votre agence.');
     }
   };
 
@@ -504,9 +502,16 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
                         {listing.title}
                       </h3>
 
-                      {/* Alerte fraîcheur / Anti-périmé */}
+                      {/* Alerte fraîcheur / Anti-périmé / En attente de validation */}
                       <div className="flex items-center gap-3 text-[11px] mt-2">
-                        {freshness.statusLabel === 'warning' && (
+                        {listing.status === 'en_attente' && (
+                          <div className="inline-flex items-center gap-1.5 text-amber-800 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-2.5 py-1 rounded-lg font-bold text-xs">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>⏳ En attente de validation par l'administrateur IMOVEX</span>
+                          </div>
+                        )}
+
+                        {listing.status !== 'en_attente' && freshness.statusLabel === 'warning' && (
                           <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium">
                             <Clock className="w-3 h-3 shrink-0" />
                             <span>Non confirmée depuis {freshness.daysSinceConfirmation}j</span>
@@ -561,6 +566,8 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
                         className={`text-xs font-semibold rounded-lg px-2.5 py-1.5 border focus:outline-none cursor-pointer ${
                           listing.status === 'disponible'
                             ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : listing.status === 'en_attente'
+                            ? 'bg-amber-100 text-amber-900 border-amber-300'
                             : listing.status === 'reserve'
                             ? 'bg-amber-50 text-amber-800 border-amber-200'
                             : listing.status === 'loue'
@@ -568,6 +575,7 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
                             : 'bg-rose-50 text-rose-800 border-rose-200'
                         }`}
                       >
+                        <option value="en_attente">⏳ En attente</option>
                         <option value="disponible">Disponible</option>
                         <option value="reserve">Réservé</option>
                         <option value="loue">Loué</option>
