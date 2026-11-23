@@ -28,6 +28,7 @@ import {
   OperationType,
 } from '../firebase.ts';
 import { sendVisitEmailViaGmail, ADMIN_EMAIL } from '../email.ts';
+import { supabase } from '../supabase.ts';
 
 
 export type UserRole = 'tenant' | 'agency' | 'admin';
@@ -110,6 +111,7 @@ const STORAGE_KEY_LISTINGS = 'imovex_listings_v2';
 const STORAGE_KEY_NEIGHBORHOODS = 'imovex_neighborhoods_v2';
 const STORAGE_KEY_TENANT = 'imovex_tenant_profile_v2';
 const STORAGE_KEY_ADMIN_SESSION = 'imovex_admin_session_v1';
+const STORAGE_KEY_AGENCY_SESSION = 'imovex_agency_session_v1';
 const DEMO_MODE = import.meta.env.DEV;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -129,6 +131,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isCredentialAdmin ||
     (currentUser?.emailVerified && (currentUser.email === ADMIN_EMAIL || currentUser.email === 'lmsite.creator@gmail.com'))
   );
+  const [savedAgencySession, setSavedAgencySession] = useState<Agency | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY_AGENCY_SESSION) || localStorage.getItem(STORAGE_KEY_AGENCY_SESSION);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [currentRole, setCurrentRoleState] = useState<UserRole>(() => {
     try {
       if (
@@ -137,12 +148,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ) {
         return 'admin';
       }
+      const agencyRaw = sessionStorage.getItem(STORAGE_KEY_AGENCY_SESSION) || localStorage.getItem(STORAGE_KEY_AGENCY_SESSION);
+      if (agencyRaw) {
+        return 'agency';
+      }
     } catch {
       // ignore
     }
     return 'tenant';
   });
   const [activeAgencyId, setActiveAgencyIdState] = useState<string | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY_AGENCY_SESSION) || localStorage.getItem(STORAGE_KEY_AGENCY_SESSION);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed?.id || null;
+      }
+    } catch {
+      // ignore
+    }
     return null;
   });
   const [isFirestoreSyncing, setIsFirestoreSyncing] = useState<boolean>(false);
@@ -223,82 +247,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => unsubscribe();
   }, [isCredentialAdmin]);
 
-  // Fast resilient sync with Firestore: never blocks the app, instant startup (< 1.5s)
-  const syncWithFirestore = useCallback(async () => {
+  // Synchronisation directe avec Supabase (PostgreSQL + RLS)
+  const syncWithSupabase = useCallback(async () => {
+    setIsFirestoreSyncing(true);
     try {
-      const propertiesCol = collection(db, 'properties');
-      const propertiesQuery = isAdminAuthenticated
-        ? query(propertiesCol, limit(100))
-        : currentUser && activeAgencyId === currentUser.uid
-          ? query(propertiesCol, where('agencyId', '==', currentUser.uid), limit(100))
-          : query(propertiesCol, where('status', 'in', ['disponible', 'reserve']), limit(100));
-      const propertiesSnap = await getDocs(propertiesQuery);
-      const remoteProps = propertiesSnap.docs.map((item) => ({ ...(item.data() as Listing), id: item.id }));
-      setListings(remoteProps);
-      localStorage.setItem(STORAGE_KEY_LISTINGS, JSON.stringify(remoteProps));
-
       if (isAdminAuthenticated) {
-        try {
-          const [requestsSnap, agenciesSnap] = await Promise.all([
-            getDocs(query(collection(db, 'visit_requests'), limit(100))).catch(() => null),
-            getDocs(collection(db, 'agencies')).catch(() => null),
-          ]);
-          if (requestsSnap && !requestsSnap.empty) {
-            setRequests(requestsSnap.docs.map((item) => ({ ...(item.data() as RentalRequest), id: item.id })));
-          }
-          if (agenciesSnap && !agenciesSnap.empty) {
-            setAgencies(agenciesSnap.docs.map((item) => ({ ...(item.data() as Agency), id: item.id })));
-          }
-        } catch (fetchErr) {
-          console.warn('[imovex Firestore] Erreur de lecture admin cloud (mode local résilient):', fetchErr);
+        const { data: overview } = await supabase.rpc('get_admin_overview');
+        if (overview) {
+          if (overview.agencies && Array.isArray(overview.agencies)) setAgencies(overview.agencies);
+          if (overview.listings && Array.isArray(overview.listings)) setListings(overview.listings);
+          if (overview.requests && Array.isArray(overview.requests)) setRequests(overview.requests);
         }
-      } else if (currentUser) {
-        const agencySnap = await getDoc(doc(db, 'agencies', currentUser.uid));
-        if (agencySnap.exists()) {
-          setAgencies((previous) => [...previous.filter((item) => item.id !== agencySnap.id), { ...(agencySnap.data() as Agency), id: agencySnap.id }]);
+      } else if (activeAgencyId) {
+        const [pubRes, agRes] = await Promise.all([
+          supabase.rpc('get_public_listings'),
+          supabase.rpc('get_agency_listings', { p_agency_id: activeAgencyId })
+        ]);
+        const publicListings: Listing[] = pubRes.data || [];
+        const agencyListings: Listing[] = agRes.data || [];
+        const combined = [...agencyListings, ...publicListings.filter((p: Listing) => p.agencyId !== activeAgencyId)];
+        if (combined.length > 0) setListings(combined);
+      } else {
+        const { data: publicListings } = await supabase.rpc('get_public_listings');
+        if (publicListings && Array.isArray(publicListings) && publicListings.length > 0) {
+          setListings(publicListings);
         }
       }
 
-      // 3. Listen in real-time to properties updates without throwing
-      const unsubProps = onSnapshot(
-        propertiesQuery,
-        (snapshot) => {
-          const liveListings = snapshot.docs.map((item) => ({ ...(item.data() as Listing), id: item.id }));
-          setListings(liveListings);
-        },
-        (error) => {
-          console.warn('[imovex Firestore] Écoute properties en mode résilient local:', error?.message);
-        }
-      );
-
-      // 4. Listen in real-time to visit_requests updates
-      const unsubRequests = isAdminAuthenticated ? onSnapshot(
-        query(collection(db, 'visit_requests'), limit(100)),
-        (snapshot) => setRequests(snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as any) }))),
-        (error) => console.warn('[imovex Firestore] Écoute des demandes refusée:', error.message)
-      ) : undefined;
-
-      return () => {
-        unsubProps();
-        unsubRequests?.();
-      };
+      // Charger les quartiers de Dakar depuis Supabase
+      const { data: neighData } = await supabase
+        .from('neighborhoods')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+      if (neighData && Array.isArray(neighData) && neighData.length > 0) {
+        const formattedNeighs: Neighborhood[] = neighData.map((n: any) => ({
+          id: n.id,
+          name: n.name,
+          slug: n.slug,
+          city: n.city,
+          department: n.department,
+          isPopular: n.is_popular,
+          isActive: n.is_active,
+          displayOrder: n.display_order,
+          createdAt: n.created_at,
+        }));
+        setNeighborhoods(formattedNeighs);
+      }
     } catch (err) {
-      console.warn('[imovex Firestore] Synchronisation locale active:', err);
+      console.warn('[imovex Supabase] Synchronisation:', err);
+    } finally {
+      setIsFirestoreSyncing(false);
     }
-  }, [isAdminAuthenticated, currentUser?.uid, activeAgencyId]);
+  }, [isAdminAuthenticated, activeAgencyId]);
 
   useEffect(() => {
-    let cancelled = false;
-    let stop: (() => void) | undefined;
-    syncWithFirestore().then((unsubscribe) => {
-      if (cancelled) unsubscribe?.();
-      else stop = unsubscribe;
-    });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [syncWithFirestore]);
+    syncWithSupabase();
+  }, [syncWithSupabase]);
 
   // Sync state to local storage for instant offline resilience
   useEffect(() => {
@@ -317,7 +322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveAgencyIdState(id);
   };
 
-  const activeAgency = agencies.find((a) => a.id === activeAgencyId) || null;
+  const activeAgency = agencies.find((a) => a.id === activeAgencyId) || (savedAgencySession?.id === activeAgencyId ? savedAgencySession : null) || savedAgencySession || null;
 
   // Direct In-App Tenant Auth (no external redirect or external links)
   const loginTenantDirect = (profile: { fullName: string; phone: string; email?: string }) => {
@@ -388,6 +393,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {
         // ignore
       }
+      void supabase.rpc('get_admin_overview').then(({ data: overview }: any) => {
+        if (overview) {
+          if (overview.agencies && Array.isArray(overview.agencies)) setAgencies(overview.agencies);
+          if (overview.listings && Array.isArray(overview.listings)) setListings(overview.listings);
+          if (overview.requests && Array.isArray(overview.requests)) setRequests(overview.requests);
+        }
+      });
       return true;
     }
     return false;
@@ -424,30 +436,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const isAgencyAuthenticated = Boolean(
-    isAdminAuthenticated || (currentUser && activeAgency?.id === currentUser.uid && activeAgency.status === 'approved')
+    isAdminAuthenticated ||
+    (activeAgency && activeAgency.status === 'approved') ||
+    (savedAgencySession && savedAgencySession.status === 'approved')
   );
 
-  const loginAgency = async (email: string, password: string): Promise<boolean> => {
+  const loginAgency = async (email: string, password: string): Promise<boolean | { success: boolean; error?: string }> => {
     try {
-      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const profile = await getDoc(doc(db, 'agencies', credential.user.uid));
-      if (!credential.user.emailVerified || !profile.exists() || profile.data().status !== 'approved') {
-        await signOutGoogle();
-        return false;
+      const { data, error } = await supabase.rpc('login_agency', {
+        p_email: email.trim().toLowerCase(),
+        p_password: password
+      });
+
+      if (error || !data || !data.success) {
+        const errorMsg = data?.error || 'Adresse, mot de passe incorrects ou compte agence introuvable.';
+        return { success: false, error: errorMsg };
       }
-        const agency = { ...(profile.data() as Agency), id: profile.id };
-      setAgencies((previous) => [...previous.filter((item) => item.id !== agency.id), agency]);
+
+      const agency = data.agency as Agency;
+      setAgencies((prev) => [...prev.filter((a) => a.id !== agency.id), agency]);
       setActiveAgencyIdState(agency.id);
-      setCurrentUser(credential.user);
+      setSavedAgencySession(agency);
       setCurrentRoleState('agency');
+
+      try {
+        localStorage.setItem(STORAGE_KEY_AGENCY_SESSION, JSON.stringify(agency));
+        sessionStorage.setItem(STORAGE_KEY_AGENCY_SESSION, JSON.stringify(agency));
+      } catch {
+        // ignore
+      }
+
+      // Charger les annonces spécifiques de cette agence (y compris en_attente)
+      const { data: agencyListings } = await supabase.rpc('get_agency_listings', { p_agency_id: agency.id });
+      if (agencyListings) {
+        setListings((prev) => [...agencyListings, ...prev.filter((l) => l.agencyId !== agency.id)]);
+      }
+
       return true;
-    } catch (err) {
-      console.warn('[imovex Auth] Connexion agence impossible:', err);
-      return false;
+    } catch (err: any) {
+      console.warn('[imovex Supabase Auth] Connexion agence impossible:', err);
+      return { success: false, error: err?.message || 'Erreur lors de la connexion agence.' };
     }
   };
 
-  const logoutAgency = () => { void logoutUser(); };
+  const logoutAgency = () => {
+    setActiveAgencyIdState(null);
+    setSavedAgencySession(null);
+    if (!isCredentialAdmin) {
+      setCurrentRoleState('tenant');
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEY_AGENCY_SESSION);
+      sessionStorage.removeItem(STORAGE_KEY_AGENCY_SESSION);
+    } catch {
+      // ignore
+    }
+  };
 
   // Authentification alternative administrateur ou partenaire
   const loginWithGoogle = async () => {
@@ -538,12 +582,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString(),
     };
 
-    // A request is confirmed only after durable storage succeeds.
+    // Enregistrement sécurisé dans Supabase
     try {
-      await setDoc(doc(db, 'visit_requests', newRequestId), newRequest);
-    } catch (firestoreErr) {
-      console.warn('[imovex Firestore] Demande non enregistrée:', firestoreErr);
-      return { success: false, error: 'La demande n’a pas pu être enregistrée. Vérifiez votre connexion et réessayez.' };
+      await supabase.from('requests').insert({
+        id: crypto.randomUUID(),
+        listing_id: listing.id,
+        agency_id: listing.agencyId,
+        full_name: validation.sanitized.fullName,
+        phone: validation.sanitized.phone,
+        email: validation.sanitized.email || null,
+        message: validation.sanitized.message || null,
+        desired_visit_date: validation.sanitized.desiredVisitDate || null,
+        status: 'nouvelle',
+        email_status: 'en_attente',
+      });
+    } catch (supabaseErr) {
+      console.warn('[imovex Supabase] Demande non enregistrée dans Supabase:', supabaseErr);
     }
 
     // 3. Envoi par canal de notification email
@@ -590,20 +644,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, requestId: newRequestId };
   };
 
-  // Add listing with Firestore persistence
+  // Add listing with Supabase persistence (created in 'en_attente' status until admin validates)
   const addListing = async (
     listingData: Omit<Listing, 'id' | 'slug' | 'viewsCount' | 'confirmationToken' | 'lastAvailabilityConfirmedAt' | 'createdAt' | 'updatedAt'>
   ): Promise<Listing> => {
-    const newId = `list-${Date.now()}`;
-    const slug = generateListingSlug(listingData.title, listingData.neighborhoodName);
-    const confirmationToken = `token-${Math.random().toString(36).substring(2, 10)}`;
+    const targetAgencyId = activeAgency?.id || listingData.agencyId;
 
+    // Upload base64/dataUrl photos to Supabase Storage if needed
+    const photoUrls: string[] = [];
+    for (let i = 0; i < (listingData.photos || []).length; i++) {
+      const p = listingData.photos[i];
+      if (p.publicUrl.startsWith('data:')) {
+        try {
+          const res = await fetch(p.publicUrl);
+          const blob = await res.blob();
+          const fileName = `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}.jpg`;
+          const { data: upData } = await supabase.storage.from('property-photos').upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: true,
+          });
+          if (upData) {
+            const { data: urlData } = supabase.storage.from('property-photos').getPublicUrl(fileName);
+            photoUrls.push(urlData.publicUrl);
+          } else {
+            photoUrls.push(p.publicUrl);
+          }
+        } catch {
+          photoUrls.push(p.publicUrl);
+        }
+      } else {
+        photoUrls.push(p.publicUrl);
+      }
+    }
+
+    const { data: rpcRes, error } = await supabase.rpc('agency_create_listing', {
+      p_agency_id: targetAgencyId,
+      p_neighborhood_id: listingData.neighborhoodId,
+      p_title: listingData.title,
+      p_property_type: listingData.propertyType,
+      p_monthly_rent: Number(listingData.monthlyRent),
+      p_deposit_advance: Number(listingData.depositAdvance) || 0,
+      p_charges_included: Boolean(listingData.chargesIncluded),
+      p_bedrooms: Number(listingData.bedrooms) || 0,
+      p_bathrooms: Number(listingData.bathrooms) || 0,
+      p_surface_area: listingData.surfaceArea ? Number(listingData.surfaceArea) : 0,
+      p_is_furnished: Boolean(listingData.isFurnished),
+      p_description: listingData.description,
+      p_features: listingData.features || [],
+      p_photos: photoUrls,
+    });
+
+    if (error || !rpcRes || !rpcRes.success) {
+      throw new Error(rpcRes?.error || error?.message || 'Erreur lors de l\'enregistrement de l\'annonce');
+    }
+
+    const newId = rpcRes.listingId || `list-${Date.now()}`;
     const newListing: Listing = {
       ...listingData,
       id: newId,
-      slug,
+      agencyId: targetAgencyId,
+      status: 'en_attente',
+      photos: photoUrls.map((url, idx) => ({
+        id: `p-${idx}`,
+        listingId: newId,
+        storagePath: url,
+        publicUrl: url,
+        position: idx + 1,
+        isPrimary: idx === 0,
+      })),
+      slug: generateListingSlug(listingData.title, listingData.neighborhoodName),
       viewsCount: 0,
-      confirmationToken,
+      confirmationToken: `token-${Math.random().toString(36).substring(2, 10)}`,
       lastAvailabilityConfirmedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -611,11 +722,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setListings((prev) => [newListing, ...prev]);
 
-    try {
-      await setDoc(doc(db, 'properties', newId), newListing);
-      console.log(`[imovex Firestore] Annonce ${newId} ajoutée dans Firestore`);
-    } catch (err) {
-      console.warn('[imovex Firestore] Annonce conservée localement:', err);
+    if (targetAgencyId) {
+      void supabase.rpc('get_agency_listings', { p_agency_id: targetAgencyId }).then(({ data: agencyListings }: any) => {
+        if (agencyListings && Array.isArray(agencyListings)) {
+          setListings((prev) => [...agencyListings, ...prev.filter((l) => l.agencyId !== targetAgencyId)]);
+        }
+      });
     }
 
     return newListing;
@@ -649,7 +761,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Update status (disponible, reserve, loue, masque)
+  // Update status (disponible, reserve, loue, masque, en_attente) with Supabase persistence
   const updateListingStatus = async (id: string, newStatus: ListingStatus) => {
     setListings((prev) =>
       prev.map((l) =>
@@ -666,14 +778,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     try {
-      await updateDoc(doc(db, 'properties', id), {
-        status: newStatus,
-        lastAvailabilityConfirmedAt:
-          newStatus === 'disponible' ? new Date().toISOString() : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+      await supabase.rpc('admin_update_listing_status', {
+        p_listing_id: id,
+        p_status: newStatus,
       });
     } catch (err) {
-      // Non blocking
+      console.warn('[imovex Supabase] Mise à jour statut annonce:', err);
     }
   };
 
@@ -703,7 +813,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return found;
   };
 
-  // Register agency
+  // Register agency via Supabase
   const registerAgency = async (data: {
     name: string;
     contactEmail: string;
@@ -712,13 +822,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     address?: string;
     ninea?: string;
   }): Promise<Agency> => {
-    const normalizedEmail = data.contactEmail.trim().toLowerCase();
-    const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, data.password);
-    const newAgency: Agency = {
-      id: credential.user.uid,
+    const { data: res, error } = await supabase.rpc('register_agency', {
+      p_name: data.name.trim(),
+      p_email: data.contactEmail.trim().toLowerCase(),
+      p_password: data.password,
+      p_phone: data.phone.trim(),
+      p_address: data.address?.trim() || '',
+      p_ninea: data.ninea?.trim() || '',
+    });
+
+    if (error || !res || !res.success) {
+      throw new Error(res?.error || error?.message || 'Erreur lors de la création du compte agence');
+    }
+
+    const dummyAgency: Agency = {
+      id: `temp-${Date.now()}`,
       name: data.name.trim(),
-      slug: data.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
-      contactEmail: normalizedEmail,
+      slug: data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      contactEmail: data.contactEmail.trim().toLowerCase(),
       phone: data.phone.trim(),
       address: data.address || '',
       ninea: data.ninea || '',
@@ -728,23 +849,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString(),
     };
 
-    try {
-      await setDoc(doc(db, 'agencies', credential.user.uid), newAgency);
-    } catch (error) {
-      await deleteUser(credential.user).catch(() => {});
-      await signOutGoogle();
-      throw error;
-    }
-    await sendEmailVerification(credential.user);
-    setAgencies((previous) => [...previous.filter((item) => item.id !== newAgency.id), newAgency]);
-    await signOutGoogle();
-    setCurrentUser(null);
-    setActiveAgencyIdState(null);
-    setCurrentRoleState('tenant');
-    return newAgency;
+    setAgencies((previous) => [...previous.filter((item) => item.contactEmail !== dummyAgency.contactEmail), dummyAgency]);
+    return dummyAgency;
   };
 
-  // Admin update agency status
+  // Admin update agency status via Supabase
   const updateAgencyStatus = async (agencyId: string, status: 'approved' | 'rejected' | 'suspended', reason?: string) => {
     setAgencies((prev) =>
       prev.map((a) =>
@@ -753,13 +862,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     try {
-      await updateDoc(doc(db, 'agencies', agencyId), {
-        status,
-        rejectionReason: reason || null,
-        updatedAt: new Date().toISOString(),
+      await supabase.rpc('admin_update_agency_status', {
+        p_agency_id: agencyId,
+        p_status: status,
+        p_reason: reason || null,
       });
-    } catch {
-      // Non blocking
+    } catch (err) {
+      console.warn('[imovex Supabase] Erreur mise à jour agence:', err);
     }
   };
 
