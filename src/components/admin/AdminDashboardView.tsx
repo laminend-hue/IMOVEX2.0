@@ -759,6 +759,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-xs">
                       <span className="font-bold text-slate-900">{item.title}</span>
+                      {item.status === 'en_attente' && (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          ⏳ En attente de validation
+                        </span>
+                      )}
                       <span aria-hidden="true" className="text-slate-300">·</span>
                       <span className="text-emerald-700 font-semibold">{formatFCFA(item.monthlyRent, true)}</span>
                     </div>
@@ -768,12 +773,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   </div>
 
                   <div className="flex items-center gap-3">
+                    {item.status === 'en_attente' && (
+                      <button
+                        onClick={() => {
+                          updateListingStatus(item.id, 'disponible');
+                          setToastMessage({ text: `Annonce « ${item.title} » validée et publiée en ligne !`, type: 'success' });
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-lg transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Valider & Publier</span>
+                      </button>
+                    )}
+
                     <select
                       value={item.status}
                       onChange={(e) => updateListingStatus(item.id, e.target.value as any)}
                       className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 cursor-pointer"
                     >
-                      <option value="disponible">Disponible</option>
+                      <option value="en_attente">⏳ En attente</option>
+                      <option value="disponible">Disponible (En ligne)</option>
                       <option value="reserve">Réservé</option>
                       <option value="loue">Loué</option>
                       <option value="masque">Masqué</option>
