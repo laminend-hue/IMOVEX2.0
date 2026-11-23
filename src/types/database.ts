@@ -1,6 +1,6 @@
 export type AgencyStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 export type PropertyType = 'appartement' | 'maison' | 'studio' | 'chambre' | 'villa';
-export type ListingStatus = 'disponible' | 'reserve' | 'loue' | 'masque';
+export type ListingStatus = 'disponible' | 'reserve' | 'loue' | 'masque' | 'en_attente';
 export type RequestStatus = 'nouvelle' | 'transmise' | 'visite_planifiee' | 'conclue' | 'sans_suite';
 export type EmailStatus = 'en_attente' | 'envoye' | 'email_en_echec';
 export type ReportReason = 'deja_loue' | 'prix_incorrect' | 'fausses_photos' | 'fraude_suspectee' | 'autre';
