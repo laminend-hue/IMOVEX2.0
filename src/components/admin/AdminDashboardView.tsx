@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, CheckCircle, XCircle, AlertCircle, RefreshCw, 
-  Mail, Phone, Calendar, Building, Eye, Clock, Check, 
+  Mail, Phone, Calendar, Building, Eye, EyeOff, Clock, Check, 
   MapPin, SlidersHorizontal, Trash2, Send, Link2,
-  Activity, Cpu, CheckCircle2, ShieldCheck, Server
+  Activity, Cpu, CheckCircle2, ShieldCheck, Server, Sparkles
 } from 'lucide-react';
 import { Agency, Listing, RentalRequest, RequestStatus } from '../../types/database.ts';
 import { useApp } from '../../lib/store/appStore.tsx';
@@ -79,8 +79,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   };
 
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  const [adminUsername, setAdminUsername] = useState('2212429193');
+  const [adminPassword, setAdminPassword] = useState('221242');
+  const [showPassword, setShowPassword] = useState(false);
   const [useGoogleAuth, setUseGoogleAuth] = useState(false);
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
@@ -90,7 +91,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     try {
       const success = await loginAdminWithCredentials(adminUsername, adminPassword);
       if (!success) {
-        setAuthError('Identifiant ou mot de passe incorrect.');
+        setAuthError('Identifiant ou mot de passe incorrect. Vous pouvez utiliser l\'identifiant 2212429193 et le code 221242.');
       }
     } catch {
       setAuthError('Erreur lors de la vérification des identifiants.');
@@ -137,9 +138,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
           {!useGoogleAuth ? (
             <form onSubmit={handleCredentialsSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Identifiant Administrateur
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Identifiant Administrateur
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">ex: 2212429193</span>
+                </div>
                 <input
                   type="text"
                   autoComplete="username"
@@ -152,18 +156,46 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mot de passe
-                </label>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="221242"
-                  className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Mot de passe
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">ex: 221242</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="221242"
+                    className="w-full px-3.5 py-2.5 pr-10 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between bg-purple-50/70 border border-purple-100 rounded-xl p-2.5 text-xs text-purple-900">
+                <span className="text-[11px] font-medium">Identifiants configurés :</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminUsername('2212429193');
+                    setAdminPassword('221242');
+                  }}
+                  className="font-bold text-purple-700 hover:text-purple-900 underline cursor-pointer text-[11px] flex items-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Remplir automatiquement
+                </button>
               </div>
 
               <button
