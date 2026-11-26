@@ -19,7 +19,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     agencies, updateAgencyStatus, listings, deleteListing, 
     updateListingStatus, requests, updateRequestStatus, resendRequestEmail, 
     neighborhoods, toggleNeighborhoodStatus, adminEmail,
-    isAdminAuthenticated, loginAdminWithCredentials, loginAdminWithGoogle, logoutAdmin
+    isAdminAuthenticated, loginAdminWithCredentials, loginAdminWithGoogle, logoutAdmin,
+    refreshAdminOverview
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'requests' | 'agencies' | 'listings' | 'neighborhoods' | 'ai_sentinel'>('requests');
@@ -27,6 +28,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   const [selectedAgencyFilter, setSelectedAgencyFilter] = useState<string>('all');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Synchronisation et actualisation continue des données administratives
+  useEffect(() => {
+    if (isAdminAuthenticated && refreshAdminOverview) {
+      void refreshAdminOverview();
+      const interval = setInterval(() => {
+        void refreshAdminOverview();
+      }, 6000);
+      return () => clearInterval(interval);
+    }
+  }, [isAdminAuthenticated, refreshAdminOverview]);
 
   // Supervision & Santé Système
   const [aiReport, setAiReport] = useState<any | null>(null);
@@ -333,6 +346,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
+            onClick={async () => {
+              setIsRefreshing(true);
+              await refreshAdminOverview();
+              setIsRefreshing(false);
+              setToastMessage({ text: 'Données actualisées depuis Supabase !', type: 'success' });
+              setTimeout(() => setToastMessage(null), 2500);
+            }}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-purple-50 dark:bg-purple-950/40 border border-purple-300 dark:border-purple-700 text-purple-800 dark:text-purple-300 hover:bg-purple-100 rounded-xl transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-purple-600 dark:text-purple-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? 'Actualisation...' : 'Actualiser'}</span>
+          </button>
+
+          <button
             onClick={handleCopyDirectLink}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl transition-colors shadow-2xs cursor-pointer"
             title="Copier l'URL directe pour vos favoris administrateur"
@@ -376,6 +404,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
         </div>
       </div>
 
+      {/* Alerte Demandes d'Intégration d'Agences en Attente */}
+      {pendingAgenciesCount > 0 && (
+        <div className="mt-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-300 dark:border-amber-700/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-xs">
+              {pendingAgenciesCount}
+            </div>
+            <div>
+              <div className="text-sm font-black text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                <span>{pendingAgenciesCount} nouvelle{pendingAgenciesCount > 1 ? 's' : ''} demande{pendingAgenciesCount > 1 ? 's' : ''} d'intégration d'agence !</span>
+                <span className="text-[10px] uppercase tracking-wider bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full font-bold">À valider</span>
+              </div>
+              <div className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                Des agences immobilières attendent votre validation pour pouvoir se connecter et déposer leurs annonces.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('agencies')}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span>Examiner et valider ({pendingAgenciesCount}) →</span>
+          </button>
+        </div>
+      )}
+
       {/* Cartes de statistiques 30 jours */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs transition-colors">
@@ -404,13 +460,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs transition-colors">
+        <button
+          type="button"
+          onClick={() => setActiveTab('agencies')}
+          className="text-left bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-amber-300 shadow-xs transition-colors cursor-pointer"
+        >
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Agences en attente</div>
           <div className={`text-2xl font-black mt-1 tabular-nums ${pendingAgenciesCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
             {pendingAgenciesCount}
           </div>
           <div className="text-[11px] text-slate-400 mt-1">sur {agencies.length} agences enregistrées</div>
-        </div>
+        </button>
       </div>
 
       {/* Bandeau Supervision Système Continue */}
@@ -678,32 +738,107 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       )}
 
       {/* 2. ONGLET AGENCES */}
-      {activeTab === 'agencies' && (
-        <div className="mt-6 space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">
-                Agences Immobilières Partenaires ({agencies.length})
+      {activeTab === 'agencies' && (() => {
+        const pendingAgencies = agencies.filter(a => a.status === 'pending');
+        const otherAgencies = agencies.filter(a => a.status !== 'pending');
+
+        return (
+        <div className="mt-6 space-y-6">
+          {/* Demandes d'intégration en attente */}
+          {pendingAgencies.length > 0 && (
+            <div className="bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border-2 border-amber-300 dark:border-amber-700/60 p-4 sm:p-5 space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-amber-200 dark:border-amber-800">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-amber-500 animate-ping"></span>
+                  <h3 className="text-base font-black text-amber-950 dark:text-amber-100">
+                    Demandes d'intégration en attente de validation ({pendingAgencies.length})
+                  </h3>
+                </div>
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  Validez pour autoriser la connexion de l'agence
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {pendingAgencies.map((agency) => (
+                  <div key={agency.id} className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-amber-200 dark:border-amber-800 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-black text-slate-900 dark:text-white">{agency.name}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          ⏳ En attente de validation
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 dark:text-slate-300 flex flex-wrap items-center gap-3">
+                        <span>Email : <strong>{agency.contactEmail}</strong></span>
+                        <span aria-hidden="true">·</span>
+                        <span>Tél : <strong>{agency.phone}</strong></span>
+                        {agency.ninea && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>NINEA : {agency.ninea}</span>
+                          </>
+                        )}
+                      </div>
+                      {agency.address && (
+                        <div className="text-xs text-slate-400">
+                          Adresse : {agency.address}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          updateAgencyStatus(agency.id, 'approved');
+                          setToastMessage({ text: `Agence « ${agency.name} » validée avec succès ! Elle peut maintenant se connecter.`, type: 'success' });
+                        }}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>✓ Valider et Activer l'agence</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          updateAgencyStatus(agency.id, 'rejected', 'Dossier incomplet');
+                          setToastMessage({ text: `Agence « ${agency.name} » refusée.`, type: 'error' });
+                        }}
+                        className="px-3 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                      >
+                        Refuser
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Toutes les autres agences */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Agences Immobilières Partenaires ({otherAgencies.length})
               </h3>
               <span className="text-xs text-slate-500">
-                Validation obligatoire avant publication publique
+                Gestion des comptes existants
               </span>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {agencies.map((agency) => (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {otherAgencies.map((agency) => (
                 <div key={agency.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900">{agency.name}</span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">{agency.name}</span>
                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
                         agency.status === 'approved'
                           ? 'bg-emerald-100 text-emerald-800'
-                          : agency.status === 'pending'
-                          ? 'bg-amber-100 text-amber-800'
                           : 'bg-rose-100 text-rose-800'
                       }`}>
-                        {agency.status === 'approved' ? 'Validée' : agency.status === 'pending' ? 'En attente' : agency.status}
+                        {agency.status === 'approved' ? '✓ Validée & Active' : agency.status === 'suspended' ? 'Suspendue' : 'Refusée'}
                       </span>
                     </div>
 
@@ -726,17 +861,29 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   </div>
 
                   {/* Boutons d'action modération */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {agency.status !== 'approved' && (
                       <button
                         onClick={() => {
                           updateAgencyStatus(agency.id, 'approved');
-                          setToastMessage({ text: `Agence « ${agency.name} » validée avec succès !`, type: 'success' });
+                          setToastMessage({ text: `Agence « ${agency.name} » réactivée avec succès !`, type: 'success' });
                         }}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs flex items-center gap-1"
                       >
                         <CheckCircle className="w-3.5 h-3.5" />
-                        <span>Valider l'agence</span>
+                        <span>Réactiver</span>
+                      </button>
+                    )}
+
+                    {agency.status !== 'pending' && (
+                      <button
+                        onClick={() => {
+                          updateAgencyStatus(agency.id, 'pending');
+                          setToastMessage({ text: `Agence « ${agency.name} » remise en attente de validation.`, type: 'success' });
+                        }}
+                        className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        Mettre en attente
                       </button>
                     )}
 
@@ -751,26 +898,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                         Suspendre
                       </button>
                     )}
-
-                    {agency.status !== 'rejected' && agency.status === 'pending' && (
-                      <button
-                        onClick={() => {
-                          updateAgencyStatus(agency.id, 'rejected', 'Dossier incomplet');
-                          setToastMessage({ text: `Agence « ${agency.name} » refusée.`, type: 'error' });
-                        }}
-                        className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                      >
-                        Refuser
-                      </button>
-                    )}
                   </div>
-
                 </div>
               ))}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* 3. ONGLET ANNONCES */}
       {activeTab === 'listings' && (
