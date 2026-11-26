@@ -95,9 +95,8 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
         ninea: regNinea.trim(),
       });
       setRegisterModalOpen(false);
-      // Connexion immédiate automatique après création de compte
-      await loginAgency(regEmail.trim(), regPassword);
-      setConfirmationNotice('🎉 Compte agence créé avec succès ! Vous êtes maintenant connecté à votre espace.');
+      setPasskeyError(null);
+      setConfirmationNotice('✅ Demande d\'intégration envoyée ! Elle est maintenant visible sur le tableau de bord administrateur pour validation.');
     } catch (error: any) {
       setRegistrationError(error?.message || 'Erreur lors de l\'enregistrement de votre agence.');
     }
@@ -117,6 +116,13 @@ export const AgencyDashboardView: React.FC<AgencyDashboardViewProps> = ({ onOpen
               Cet espace est accessible par son lien direct : <code className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-400 font-semibold">/espace-agence</code>
             </p>
           </div>
+
+          {confirmationNotice && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{confirmationNotice}</span>
+            </div>
+          )}
 
           {passkeyError && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 rounded-xl text-xs flex items-center gap-2">
