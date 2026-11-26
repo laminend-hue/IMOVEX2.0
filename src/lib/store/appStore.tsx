@@ -63,6 +63,7 @@ interface AppContextType {
   loginAdminWithCredentials: (username: string, password: string) => Promise<boolean>;
   loginAdminWithGoogle: () => Promise<boolean>;
   logoutAdmin: () => void;
+  refreshAdminOverview: () => Promise<void>;
 
   // Direct Agency Portal Auth
   isAgencyAuthenticated: boolean;
@@ -98,7 +99,7 @@ interface AppContextType {
   registerAgency: (data: { name: string; contactEmail: string; phone: string; password: string; address?: string; ninea?: string }) => Promise<Agency>;
 
   // Actions Admin
-  updateAgencyStatus: (agencyId: string, status: 'approved' | 'rejected' | 'suspended', reason?: string) => void;
+  updateAgencyStatus: (agencyId: string, status: 'approved' | 'rejected' | 'suspended' | 'pending', reason?: string) => void;
   updateRequestStatus: (requestId: string, status: RequestStatus) => void;
   resendRequestEmail: (requestId: string) => Promise<{ success: boolean; message: string }>;
   toggleNeighborhoodStatus: (id: string) => void;
@@ -248,6 +249,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isCredentialAdmin]);
 
   // Synchronisation directe avec Supabase (PostgreSQL + RLS)
+  const refreshAdminOverview = useCallback(async () => {
+    try {
+      const { data: overview } = await supabase.rpc('get_admin_overview');
+      if (overview) {
+        if (overview.agencies && Array.isArray(overview.agencies)) setAgencies(overview.agencies);
+        if (overview.listings && Array.isArray(overview.listings)) setListings(overview.listings);
+        if (overview.requests && Array.isArray(overview.requests)) setRequests(overview.requests);
+      }
+    } catch (err) {
+      console.warn('[imovex Supabase] Erreur actualisation admin overview:', err);
+    }
+  }, []);
+
   const syncWithSupabase = useCallback(async () => {
     setIsFirestoreSyncing(true);
     try {
@@ -909,7 +923,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Admin update agency status via Supabase
-  const updateAgencyStatus = async (agencyId: string, status: 'approved' | 'rejected' | 'suspended', reason?: string) => {
+  const updateAgencyStatus = async (agencyId: string, status: 'approved' | 'rejected' | 'suspended' | 'pending', reason?: string) => {
     setAgencies((prev) =>
       prev.map((a) =>
         a.id === agencyId ? { ...a, status, rejectionReason: reason, updatedAt: new Date().toISOString() } : a
@@ -1013,6 +1027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginAdminWithCredentials,
         loginAdminWithGoogle,
         logoutAdmin,
+        refreshAdminOverview,
         isAgencyAuthenticated,
         loginAgency,
         logoutAgency,
